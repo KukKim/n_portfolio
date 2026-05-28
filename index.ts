@@ -24,9 +24,7 @@ app.get("/", (req, res) => {
 });
 
 app.post("/check", jsonParser, async (req, res) => {
-  console.log("check - ");
   const { token } = req.body;
-  console.log("token - ", token);
   if (!token) {
     return res.status(401).json({
       success: false,
@@ -144,24 +142,42 @@ app.get("/signin", jsonParser, async (req, res) => {
 });
 
 app.post("/signup", jsonParser, async (req, res) => {
-  const { name, email, imgUri, password } = req.body;
+  const { name, email, imgUri, password, accountType } = req.body;
   try {
+    const token = crypto.randomBytes(32).toString("hex");
+    const loginDate = new Date();
+    const expireDate = new Date(loginDate);
+    expireDate.setDate(expireDate.getDate() + 100);
     const [result] = await connection.query(
-      "INSERT INTO user (name, email, imgUri, password) VALUE ('" +
-        name +
-        "', '" +
-        email +
-        "', '" +
-        imgUri +
-        "', '" +
-        password +
-        "');",
+      `
+      INSERT INTO user
+      (
+        name,
+        email,
+        imgUri,
+        password,
+        token,
+        loginDate,
+        expireDate,
+        accountType
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        name,
+        email,
+        imgUri,
+        password,
+        token,
+        loginDate,
+        expireDate,
+        accountType,
+      ],
     );
-
     return res.status(201).json({
       success: true,
       message: "Signup successful",
-      data: { userId: result.insertId },
+      data: { userId: result.insertId, token, name, email, imgUri },
     });
   } catch (err) {
     console.error(err);
@@ -172,6 +188,32 @@ app.post("/signup", jsonParser, async (req, res) => {
         message: "This email is already in use",
       });
     }
+    return res.status(500).json({
+      success: false,
+      code: "SERVER_ERROR",
+      message: "Something went wrong",
+    });
+  }
+});
+
+app.post("/registerpushtoken", jsonParser, async (req, res) => {
+  const { pushtoken, platform } = req.body;
+  try {
+    const [result] = await connection.query(
+      "UPDATE user SET ? = ? WHERE idx = ?",
+      [
+        platform == "ios" ? "iosPushToken" : "androidPushToken",
+        pushtoken,
+        req.user.idx,
+      ],
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Push token registered successfully",
+    });
+  } catch (err) {
+    console.error(err);
     return res.status(500).json({
       success: false,
       code: "SERVER_ERROR",
