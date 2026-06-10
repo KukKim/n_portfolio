@@ -3,13 +3,17 @@ import mysql from "mysql2/promise";
 import express from "express";
 import bodyParser from "body-parser";
 import crypto from "crypto";
+import dotenv from "dotenv";
+import { getAccessToken, getGames, getGamesAgeRatings } from "./src/twitch.ts";
 
+dotenv.config();
+const accessToken = await getAccessToken();
 // Create the connection to database
 const connection = await mysql.createConnection({
-  host: "localhost",
-  user: "root",
-  database: "portfolio",
-  password: "sotus7",
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  database: process.env.DB_DATABASE,
+  password: process.env.DB_PASSWORD,
 });
 
 const app = express();
@@ -214,6 +218,201 @@ app.post("/registerpushtoken", jsonParser, async (req, res) => {
     });
   } catch (err) {
     console.error(err);
+    return res.status(500).json({
+      success: false,
+      code: "SERVER_ERROR",
+      message: "Something went wrong",
+    });
+  }
+});
+
+// app.get("/getgames", jsonParser, async (req, res) => {
+//   try {
+//     const [savedGames] = await connection.query(
+//       `
+//       SELECT
+//         igdb_id AS id,
+//         name,
+//         cover_id,
+//         cover_url
+//       FROM games
+//       ORDER BY igdb_id ASC
+//       `,
+//     );
+//     if (Array.isArray(savedGames) && savedGames.length > 0) {
+//       const games = savedGames.map((game: any) => ({
+//         id: game.id,
+//         name: game.name,
+//         cover: game.cover_id
+//           ? {
+//               id: game.cover_id,
+//               url: game.cover_url,
+//             }
+//           : null,
+//       }));
+
+//       return res.status(200).json({
+//         success: true,
+//         message: "Games retrieved successfully",
+//         source: "database",
+//         data: games,
+//       });
+//     }
+
+//     const games = await getGames(accessToken);
+//     for (const game of games) {
+//       await connection.query(
+//         `
+//         INSERT INTO games (
+//           igdb_id,
+//           name,
+//           cover_id,
+//           cover_url
+//         )
+//         VALUES (?, ?, ?, ?)
+//         ON DUPLICATE KEY UPDATE
+//           name = VALUES(name),
+//           cover_id = VALUES(cover_id),
+//           cover_url = VALUES(cover_url)
+//         `,
+//         [game.id, game.name, game.cover?.id ?? null, game.cover?.url ?? null],
+//       );
+//     }
+//     return res.status(200).json({
+//       success: true,
+//       message: "Games retrieved successfully",
+//       source: "igdb",
+//       data: games,
+//     });
+//   } catch (err) {
+//     console.error(err);
+
+//     return res.status(500).json({
+//       success: false,
+//       code: "SERVER_ERROR",
+//       message: "Something went wrong",
+//     });
+//   }
+// });
+
+// TODO: AI로 만든 코드 이해 필요
+app.get("/getgames", jsonParser, async (req, res) => {
+  try {
+    // const [savedGames] = await connection.query(
+    //   `
+    //   SELECT
+    //     igdb_id AS id,
+    //     name,
+    //     cover_id,
+    //     cover_url
+    //   FROM games
+    //   ORDER BY igdb_id ASC
+    //   `,
+    // );
+    const savedGames = [];
+    const shouldFetchFromApi =
+      !Array.isArray(savedGames) || savedGames.length === 0;
+
+    if (!shouldFetchFromApi) {
+      const games = savedGames.map((game: any) => ({
+        id: game.id,
+        name: game.name,
+        cover: game.cover_id
+          ? {
+              id: game.cover_id,
+              url: game.cover_url,
+            }
+          : null,
+      }));
+
+      return res.status(200).json({
+        success: true,
+        message: "Games retrieved successfully",
+        source: "database",
+        data: games,
+      });
+    }
+
+    const games = await getGames(accessToken);
+
+    for (const game of games) {
+      await connection.query(
+        `
+        INSERT INTO games (
+          igdb_id,
+          name,
+          cover_id,
+          cover_url
+        )
+        VALUES (?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          name = VALUES(name),
+          cover_id = VALUES(cover_id),
+          cover_url = VALUES(cover_url)
+        `,
+        [game.id, game.name, game.cover?.id ?? null, game.cover?.url ?? null],
+      );
+
+      if (Array.isArray(game.genres)) {
+        for (const genre of game.genres) {
+          await connection.query(
+            `
+            INSERT INTO genre (
+              id,
+              name,
+              slug
+            )
+            VALUES (?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+              name = VALUES(name),
+              slug = VALUES(slug)
+            `,
+            [genre.id, genre.name, genre.slug ?? String(genre.id)],
+          );
+
+          await connection.query(
+            `
+            INSERT IGNORE INTO game_genre (
+              game_id,
+              genre_id
+            )
+            VALUES (?, ?)
+            `,
+            [game.id, genre.id],
+          );
+        }
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Games retrieved successfully",
+      source: "igdb",
+      data: games,
+    });
+  } catch (err) {
+    console.error(err);
+
+    return res.status(500).json({
+      success: false,
+      code: "SERVER_ERROR",
+      message: "Something went wrong",
+    });
+  }
+});
+
+app.get("/getgamesageratings", jsonParser, async (req, res) => {
+  try {
+    const gameageratings = await getGamesAgeRatings(accessToken);
+    return res.status(200).json({
+      success: true,
+      message: "Games retrieved successfully",
+      source: "igdb",
+      data: gameageratings,
+    });
+  } catch (err) {
+    console.error(err);
+
     return res.status(500).json({
       success: false,
       code: "SERVER_ERROR",
