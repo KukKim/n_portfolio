@@ -25,7 +25,7 @@ export async function getGames(accessToken: string) {
       Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
     },
-    body: `fields name,cover.*,summary,created_at,updated_at,genres.*,screenshots; sort created_at desc; limit 20;`,
+    body: `fields name,cover.*,summary,created_at,updated_at,genres.*,platforms.*,screenshots; sort created_at desc; limit 20;`,
   });
   const data = await response.json();
   return data;
