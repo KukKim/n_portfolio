@@ -1,4 +1,5 @@
 // Get the client
+import http from "http";
 import mysql from "mysql2/promise";
 import express from "express";
 import bodyParser from "body-parser";
@@ -6,6 +7,7 @@ import crypto from "crypto";
 import dotenv from "dotenv";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { getAccessToken, getGames, getGamesAgeRatings } from "./src/twitch.ts";
+import { Server } from "socket.io";
 
 dotenv.config();
 const accessToken = await getAccessToken();
@@ -18,6 +20,8 @@ const connection = await mysql.createConnection({
 });
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
 const port = 3000;
 // create application/json parser
 const jsonParser = bodyParser.json();
@@ -744,13 +748,13 @@ app.post("/addChat", jsonParser, async (req, res) => {
       `
         SELECT
           cm.id,
-          cm.room_id AS roomId,
-          cm.sender_id AS senderId,
+          cm.room_id,
+          cm.sender_id,
           cm.message,
-          cm.created_at AS createdAt,
-          cm.updated_at AS updatedAt,
-          u.name AS senderName,
-          u.imgUri AS senderImage
+          cm.created_at,
+          cm.updated_at,
+          u.name,
+          u.imgUri
         FROM chat_message cm
 
         INNER JOIN user u
@@ -762,10 +766,15 @@ app.post("/addChat", jsonParser, async (req, res) => {
       [insertResult.insertId],
     );
 
+    const createdMessage = messageRows[0];
+    const roomName = `chat-room:${roomId}`;
+
+    io.to(roomName).emit("chat:message", createdMessage);
+
     return res.status(201).json({
       success: true,
       message: "메시지가 생성되었습니다.",
-      data: messageRows[0],
+      data: createdMessage,
     });
   } catch (error) {
     console.error("addChat error:", error);
@@ -827,6 +836,92 @@ app.get("/getChats", async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`Example app listening on port ${port}`);
+// app.listen(port, () => {
+//   console.log(`Example app listening on port ${port}`);
+// });
+
+io.on("connection", (socket) => {
+  console.log("socket connected:", socket.id);
+
+  socket.on("chat:join", async ({ roomId, userId }, callback) => {
+    console.log("chat:join - ", roomId, userId);
+    if (!roomId || !userId) {
+      callback?.({
+        success: false,
+        message: "roomId와 userId는 필수입니다.",
+      });
+      return;
+    }
+
+    try {
+      const roomName = `chat-room:${roomId}`;
+      const [memberRows] = await connection.query(
+        `
+          SELECT room_id, user_id
+          FROM chat_room_member
+          WHERE room_id = ?
+            AND user_id = ?
+          LIMIT 1
+        `,
+        [roomId, userId],
+      );
+      if (memberRows.length === 0) {
+        callback?.({
+          success: false,
+          message: "해당 채팅방에 참여하지 않은 사용자입니다.",
+        });
+        return;
+      }
+      const [messageRows] = await connection.query(
+        `
+          SELECT MAX(id) AS lastMessageId
+          FROM chat_message
+          WHERE room_id = ?
+        `,
+        [roomId],
+      );
+      const lastMessageId = messageRows[0]?.lastMessageId ?? null;
+      await connection.query(
+        `
+          UPDATE chat_room_member
+          SET last_read_message_id = ?
+          WHERE room_id = ?
+            AND user_id = ?
+        `,
+        [lastMessageId, roomId, userId],
+      );
+
+      await socket.join(roomName);
+      callback?.({
+        success: true,
+        roomId,
+        lastReadMessageId: lastMessageId,
+      });
+      console.log(`${socket.id} joined ${roomName}`);
+    } catch (error) {
+      console.error("chat:join error:", error);
+
+      callback?.({
+        success: false,
+
+        message: "채팅방 입장 처리 중 오류가 발생했습니다.",
+      });
+    }
+  });
+
+  socket.on("chat:leave", ({ roomId }) => {
+    const roomName = `chat-room:${roomId}`;
+
+    socket.leave(roomName);
+
+    console.log(`${socket.id} left ${roomName}`);
+  });
+
+  socket.on("disconnect", () => {
+    console.log("socket disconnected:", socket.id);
+  });
+});
+
+server.listen(3000, () => {
+  console.log("Server listening on port 3000");
 });
