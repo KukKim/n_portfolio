@@ -239,6 +239,69 @@ app.post("/registerpushtoken", jsonParser, async (req, res) => {
   }
 });
 
+app.patch("/updateuserinfo", jsonParser, async (req, res) => {
+  const { id } = req.body;
+
+  const availableFields = [
+    "name",
+    "email",
+    "imgUri",
+    // "password",
+    // "token",
+    // "loginDate",
+    // "expireDate",
+    // "accountType",
+    "pushTokenIOS",
+    "pushTokenAndroid",
+  ];
+
+  var setClause = "";
+  var values: (string | null)[] = [];
+
+  availableFields.forEach((field) => {
+    if (req.body[field]) {
+      setClause += `${field} = ?, `;
+      values.push(req.body[field]);
+    }
+  });
+  if (setClause === "") {
+    return res.status(400).json({
+      success: false,
+      code: "INVALID_REQUEST",
+      message: "At least one field to update is required",
+    });
+  }
+  // Remove the trailing comma and space
+  setClause = setClause.slice(0, -2);
+
+  if (!id) {
+    return res.status(400).json({
+      success: false,
+      code: "INVALID_REQUEST",
+      message: "id is required",
+    });
+  }
+  try {
+    const [result] = await connection.query(
+      `UPDATE user SET ${setClause} WHERE id = ?`,
+      [...values, id],
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "User info updated successfully",
+    });
+  } catch (err) {
+    console.error(err);
+
+    return res.status(500).json({
+      success: false,
+      code: "SERVER_ERROR",
+      message: "Something went wrong",
+    });
+  }
+});
+
 // TODO: AI로 만든 코드 이해 필요
 app.get("/getgames", jsonParser, async (req, res) => {
   try {
