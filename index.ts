@@ -8,6 +8,14 @@ import dotenv from "dotenv";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { getAccessToken, getGames, getGamesAgeRatings } from "./src/twitch.ts";
 import { Server } from "socket.io";
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+} from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+
+const s3Client = new S3Client({ region: "ap-northeast-2" });
 
 dotenv.config();
 const accessToken = await getAccessToken();
@@ -28,8 +36,53 @@ const jsonParser = bodyParser.json();
 // create application/x-www-form-urlencoded parser
 const urlencodedParser = bodyParser.urlencoded();
 
-app.get("/", (req, res) => {
-  res.send("Hello World!");
+app.post("/upload", jsonParser, async (req, res) => {
+  const { fileName, fileType } = req.body;
+
+  if (!fileName || !fileType) {
+    return res.status(400).json({
+      success: false,
+      code: "INVALID_REQUEST",
+      message: "fileName and fileType are required",
+    });
+  }
+
+  const s3Params = {
+    Bucket: "dk-portfolio-300536574903-ap-northeast-2-an",
+    Key: fileName,
+  };
+
+  try {
+    const command = new PutObjectCommand(s3Params);
+    await s3Client.send(command);
+
+    const [uploadUrl, imageUrl] = await Promise.all([
+      getSignedUrl(
+        s3Client,
+        new PutObjectCommand({
+          ...s3Params,
+          ContentType: fileType,
+        }),
+        { expiresIn: 3600 },
+      ),
+      getSignedUrl(s3Client, new GetObjectCommand(s3Params), {
+        // expiresIn: 3600,
+      }),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      message: "Upload URL generated successfully",
+      data: { uploadUrl, imageUrl },
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({
+      success: false,
+      code: "SERVER_ERROR",
+      message: "Something went wrong",
+    });
+  }
 });
 
 app.post("/check", jsonParser, async (req, res) => {
@@ -134,6 +187,7 @@ app.get("/signin", jsonParser, async (req, res) => {
       success: true,
       message: "Signin successful",
       data: {
+        id: user.id,
         name: user.name,
         imgUri: user.imgUri,
         token,
