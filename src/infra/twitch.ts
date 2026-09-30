@@ -1,9 +1,7 @@
-import dotenv from "dotenv";
-dotenv.config();
-// igdb.js
+import { TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET } from "../config/env.ts";
 
-const CLIENT_ID = process.env.TWITCH_CLIENT_ID;
-const CLIENT_SECRET = process.env.TWITCH_CLIENT_SECRET;
+const CLIENT_ID = TWITCH_CLIENT_ID;
+const CLIENT_SECRET = TWITCH_CLIENT_SECRET;
 
 export async function getAccessToken() {
   const response = await fetch(
@@ -44,3 +42,5 @@ export async function getGamesAgeRatings(accessToken: string) {
   const data = await response.json();
   return data;
 }
+
+export const accessToken = await getAccessToken();
