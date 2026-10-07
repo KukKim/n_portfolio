@@ -29,7 +29,7 @@ export async function createChatMessage(
   const createdMessage = messageRows[0];
   const roomName = `chat-room:${roomId}`;
 
-  io.to(roomName).emit("chat:message", createdMessage);
+  io.to(roomName).emit(`chat:message`, createdMessage);
 
   return createdMessage;
 }
