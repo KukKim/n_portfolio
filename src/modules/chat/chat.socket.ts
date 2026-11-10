@@ -7,6 +7,9 @@ import {
 
 export function registerChatSocket(io: Server) {
   io.on("connection", (socket) => {
+    socket.on("chat:room:create", async ({ title, userId }, callback) => {
+      console.log("chat:room:create - ", title, userId);
+    });
     socket.on("chat:join", async ({ roomId, userId }, callback) => {
       console.log("chat:join - ", roomId, userId);
       if (!roomId || !userId) {

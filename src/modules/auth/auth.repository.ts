@@ -1,6 +1,14 @@
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { connection } from "../../infra/database.ts";
 
+export interface AuthUserRow extends RowDataPacket {
+  id: number;
+  name: string | null;
+  email: string | null;
+  image_uri: string | null;
+  account_type: string;
+}
+
 export async function findUserByToken(token: unknown) {
   const [users] = await connection.query<RowDataPacket[]>(
     "SELECT id, name, email, image_uri, token, login_at, expires_at FROM user WHERE token = ?",
@@ -68,4 +76,44 @@ export async function insertUser(values: unknown[]) {
   );
 
   return result;
+}
+
+export async function findOrCreateGithubUser(params: {
+  githubId: string;
+  name: string;
+  imgUri: string;
+}): Promise<AuthUserRow> {
+  await connection.query(
+    `
+    INSERT INTO user (
+      name,
+      email,
+      image_uri,
+      password,
+      account_type,
+      oauth_provider,
+      oauth_subject
+    )
+    VALUES (?, NULL, ?, NULL, 'SOCIAL', 'github', ?)
+    ON DUPLICATE KEY UPDATE id = id
+    `,
+    [params.name, params.imgUri, params.githubId],
+  );
+
+  const [users] = await connection.query<AuthUserRow[]>(
+    `
+    SELECT id, name, email, image_uri, account_type
+    FROM user
+    WHERE oauth_provider = ?
+      AND oauth_subject = ?
+    LIMIT 1
+    `,
+    ["github", params.githubId],
+  );
+
+  if (!users[0]) {
+    throw new Error("GitHub 회원 조회 또는 생성에 실패했습니다.");
+  }
+
+  return users[0];
 }

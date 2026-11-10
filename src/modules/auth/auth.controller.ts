@@ -1,5 +1,8 @@
 import type { Request, Response } from "express";
 import * as authService from "./auth.service.ts";
+import { signinWithGithub } from "./github.service.ts";
+
+import { AuthError } from "./auth.error.ts";
 
 export async function check(req: Request, res: Response) {
   const { token } = req.body;
@@ -88,6 +91,59 @@ export async function signin(req: Request, res: Response) {
   }
 }
 
+export async function socialSignin(req: Request, res: Response) {
+  const { code, codeVerifier, provider } = req.body;
+  try {
+    if (
+      provider !== "github" ||
+      typeof code !== "string" ||
+      code.length === 0 ||
+      code.length > 512 ||
+      typeof codeVerifier !== "string" ||
+      !/^[A-Za-z0-9._~-]{43,128}$/.test(codeVerifier)
+    ) {
+      return res.status(400).json({
+        success: false,
+        code: "INVALID_SOCIAL_SIGNIN_REQUEST",
+        message: "소셜 로그인 요청이 올바르지 않습니다.",
+      });
+    }
+
+    if (provider === "github") {
+      const user = await signinWithGithub({
+        code,
+        codeVerifier,
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: "SocialSignin successful",
+        data: user,
+      });
+    } else {
+      return res.status(400).json({
+        success: false,
+        code: "INVALID_PROVIDER",
+        message: "Invalid provider",
+      });
+    }
+  } catch (err) {
+    if (err instanceof AuthError) {
+      return res.status(err.status).json({
+        success: false,
+        code: err.code,
+        message: err.message,
+      });
+    }
+
+    console.error(err);
+    return res.status(500).json({
+      success: false,
+      code: "SERVER_ERROR",
+      message: "Something went wrong",
+    });
+  }
+}
 export async function signup(req: Request, res: Response) {
   const { name, email, imgUri, password, accountType } = req.body;
   try {

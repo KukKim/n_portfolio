@@ -7,6 +7,19 @@ import {
   insertUser,
   updateUserSignin,
 } from "./auth.repository.ts";
+import { findOrCreateGithubUser, type AuthUserRow } from "./auth.repository.ts";
+
+interface GithubTokenResponse {
+  access_token?: string;
+  error?: string;
+}
+
+interface GithubUser {
+  id: number;
+  login: string;
+  name: string | null;
+  avatar_url: string;
+}
 
 type VerifyTokenResult =
   | { status: "INVALID_TOKEN" }
